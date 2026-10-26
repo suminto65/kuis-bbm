@@ -9,16 +9,20 @@ exports.handler = async (e) => {
   if (need && b.code !== need) return reply(401, { error: 'Kode akses salah' });
   const key = process.env.GEMINI_API_KEY;
   if (!key) return reply(500, { error: 'GEMINI_API_KEY belum diatur di Netlify' });
-  const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+  const model = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+  const call = (cfg) => fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: String(b.prompt || '').slice(0, 6000) }] }],
+      generationConfig: Object.assign({ responseMimeType: 'application/json', temperature: 0.7 }, cfg)
+    })
+  });
   try {
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: String(b.prompt || '').slice(0, 6000) }] }],
-        generationConfig: { responseMimeType: 'application/json', temperature: 0.7, thinkingConfig: { thinkingBudget: 0 } }
-      })
-    });
+    // coba dengan thinking minimal agar cepat; jika model menolak, ulangi tanpa pengaturan itu
+    let res = await call({ thinkingConfig: { thinkingBudget: 0 } });
+    if (res.status === 400) res = await call({});
     const j = await res.json();
     if (!res.ok) return reply(502, { error: (j.error && j.error.message) || 'Gemini error' });
     const text = (j.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('');
