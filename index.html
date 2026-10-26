@@ -90,15 +90,16 @@ function runner(){
  $('#fin').onclick=()=>{if(confirm('Selesaikan kuis sekarang?'))finish()};
 }
 const RCSS='body{font:16px/1.6 system-ui,sans-serif;background:#eef3f2;margin:0;color:#1f2937}#app{max-width:760px;margin:auto;padding:16px}h1{color:#0f766e;margin:0}.m{color:#64748b;margin:2px 0 12px}#top{display:flex;gap:10px;align-items:center;position:sticky;top:0;background:#eef3f2;padding:8px 0}#top input{flex:1}input[type=text],input:not([type]),.a{width:100%;padding:8px;border:1px solid #b6c4c2;border-radius:8px;font:inherit}.q{background:#fff;border:2px solid #d5dfdd;border-radius:12px;padding:12px 14px;margin:12px 0}.q.ok{border-color:#16a34a;background:#f0fdf4}.q.no{border-color:#dc2626;background:#fef2f2}.o{display:block;padding:6px 8px;margin:4px 0;border-radius:8px;cursor:pointer}.o:hover{background:#ecf5f3}.ex{font-size:14px;margin-top:6px}button{font:inherit;background:#0f766e;color:#fff;border:0;border-radius:8px;padding:10px 16px;font-weight:600;cursor:pointer}';
+const KB='https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/',KT='<link rel="stylesheet" href="'+KB+'katex.min.css"><script defer src="'+KB+'katex.min.js"><\/script><script defer src="'+KB+'contrib/auto-render.min.js"><\/script>';
 function runDoc(){
  const data=JSON.stringify(quiz).replace(/</g,'\\u003c');
- return '<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+esc(quiz.title)+'</title><style>'+RCSS+'</style></head><body><div id="app"></div><script>window.__Q='+data+';('+runner.toString()+')()<\/script></body></html>';
+ return '<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+esc(quiz.title)+'</title>'+KT+'<style>'+RCSS+'</style></head><body><div id="app"></div><script>window.__Q='+data+';('+runner.toString()+')()<\/script></body></html>';
 }
 
 /* ---------- GENERATE ---------- */
-function prompt(f){
- const n=10,T={pg:'pilihan ganda biasa (tepat 1 jawaban benar)',pk:'check box / pilihan ganda kompleks (2-3 jawaban benar)',is:'isian singkat (jawaban satu kata/angka)',mix:'campuran: sekitar 50% pg, 25% pk, 25% is'}[f.tipe];
- return `Kamu guru ${f.mapel} berpengalaman untuk ${f.jenjang} kelas ${f.kelas} (Kurikulum Merdeka, Indonesia). Buat ${n} soal kuis tentang materi: "${f.materi}". Tipe soal: ${T}. Tingkat kesulitan bervariasi (30% mudah, 50% sedang, 20% sukar), sesuai usia siswa, bahasa Indonesia, semua angka/rumus matematika WAJIB ditulis dengan LaTeX di antara tanda dolar tunggal, mis. $\\frac{2}{3}$, bilangan campuran $2\\frac{1}{3}$, $x^2$, $\\sqrt{9}$, $3 \\times 4$, $\\div$, $\\leq$. Karena output JSON, setiap backslash HARUS ditulis ganda (\\\\frac). Opsi jawaban matematis juga memakai $...$. Kembalikan HANYA JSON array berisi ${n} objek: {"type":"pg"|"pk"|"is","text":"soal","options":["..","..","..",".."] (hanya pg/pk, tepat 4, tanpa awalan huruf),"answer":0 (pg: indeks 0-3; is: string jawaban),"answers":[0,2] (hanya pk),"alt":["variasi jawaban"] (hanya is),"explanation":"pembahasan singkat"}`;
+function prompt(f,n,lv){
+ const T={pg:'pilihan ganda biasa (tepat 1 jawaban benar)',pk:'check box / pilihan ganda kompleks (2-3 jawaban benar)',is:'isian singkat (jawaban satu kata/angka)',mix:'campuran: sekitar 50% pg, 25% pk, 25% is'}[f.tipe];
+ return `Kamu guru ${f.mapel} berpengalaman untuk ${f.jenjang} kelas ${f.kelas} (Kurikulum Merdeka, Indonesia). Buat ${n} soal kuis tentang materi: "${f.materi}". Tipe soal: ${T}. Tingkat kesulitan: ${lv}, sesuai usia siswa, bahasa Indonesia, semua angka/rumus matematika WAJIB ditulis dengan LaTeX di antara tanda dolar tunggal, mis. $\\frac{2}{3}$, bilangan campuran $2\\frac{1}{3}$, $x^2$, $\\sqrt{9}$, $3 \\times 4$, $\\div$, $\\leq$. Karena output JSON, setiap backslash HARUS ditulis ganda (\\\\frac). Opsi jawaban matematis juga memakai $...$. Kembalikan HANYA JSON array berisi ${n} objek: {"type":"pg"|"pk"|"is","text":"soal","options":["..","..","..",".."] (hanya pg/pk, tepat 4, tanpa awalan huruf),"answer":0 (pg: indeks 0-3; is: string jawaban),"answers":[0,2] (hanya pk),"alt":["variasi jawaban"] (hanya is),"explanation":"pembahasan singkat"}`;
 }
 function clean(arr,f){
  return arr.slice(0,10).map(q=>{
@@ -120,9 +121,14 @@ $('#go').onclick=async()=>{
  if(!f.materi){st.className='st err';st.textContent='Isi materi terlebih dahulu.';return}
  $('#go').disabled=true;st.textContent='AI sedang menyusun kuis… (bisa sampai 30 detik)';
  try{
-  const r=await fetch('/.netlify/functions/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:prompt(f),code:$('#kode').value})});
-  const j=await r.json();if(!r.ok)throw new Error(j.error||'Gagal menghubungi AI');
-  const arr=parseAI(j.text);
+  const part=async(lv)=>{
+   const r=await fetch('/.netlify/functions/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:prompt(f,5,lv),code:$('#kode').value})});
+   const raw=await r.text();let j;
+   try{j=JSON.parse(raw)}catch{throw new Error('Server membalas bukan JSON (status '+r.status+'). Kemungkinan waktu fungsi Netlify habis; coba lagi.')}
+   if(!r.ok)throw new Error(j.error||'Gagal menghubungi AI');
+   return parseAI(j.text)};
+  const [p1,p2]=await Promise.all([part('mudah sampai sedang (soal 1-5)'),part('sedang sampai sukar (soal 6-10), dengan sub-topik berbeda dari soal dasar')]);
+  const arr=[].concat(p1,p2);
   quiz={title:'Kuis '+f.mapel+' – '+f.materi,meta:`${f.jenjang} Kelas ${f.kelas} • ${f.mapel} • `+(f.durasi?f.durasi+' menit':'Tanpa batas waktu'),minutes:f.durasi,info:f,questions:clean(arr,f)};
   st.textContent='Kuis siap: '+quiz.questions.length+' soal. Periksa lewat “Mulai Kuis” atau “Kelola Kuis”.';show('start');
  }catch(e){st.className='st err';st.textContent='Gagal: '+e.message}
