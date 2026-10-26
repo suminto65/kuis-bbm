@@ -13,6 +13,7 @@ exports.handler = async (e) => {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
   const call = (cfg) => fetch(url, {
     method: 'POST',
+    signal: AbortSignal.timeout(24000),
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
     body: JSON.stringify({
       contents: [{ parts: [{ text: String(b.prompt || '').slice(0, 6000) }] }],
@@ -21,13 +22,16 @@ exports.handler = async (e) => {
   });
   try {
     // coba dengan thinking minimal agar cepat; jika model menolak, ulangi tanpa pengaturan itu
-    let res = await call({ thinkingConfig: { thinkingBudget: 0 } });
-    if (res.status === 400) res = await call({});
+    let res;
+    for (const cfg of [{ thinkingConfig: { thinkingLevel: 'low' } }, { thinkingConfig: { thinkingLevel: 'minimal' } }, {}]) {
+      res = await call(cfg);
+      if (res.status !== 400) break;
+    }
     const j = await res.json();
     if (!res.ok) return reply(502, { error: (j.error && j.error.message) || 'Gemini error' });
     const text = (j.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('');
     return reply(200, { text });
   } catch (err) {
-    return reply(500, { error: String(err.message || err) });
+    return reply(504, { error: err.name === 'TimeoutError' ? 'AI terlalu lama menjawab, coba lagi.' : String(err.message || err) });
   }
 };
